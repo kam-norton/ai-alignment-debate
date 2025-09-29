@@ -82,7 +82,7 @@ python single_response.py --topic "What is the capital of France?" --model "open
 - **Script configs**:  
   - `run_matrix.py` uses a pre-defined list of scripts (`debate_eval.py`, `debate_eval_norubric.py`, `debate_nojudge.py`, etc.).  
   - `debate_nojudge.py` and `single_response.py` accept arguments for models and topics (see examples above).  
-
+- **Logs**: Every result is stored in respective log files in the 'logs' directory, and the MATLAB scripts provide a way to use or process the results and information. 
 ---
 
 ## Next Steps
