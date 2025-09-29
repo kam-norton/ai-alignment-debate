@@ -1,0 +1,1 @@
+A trolley is heading down a track with five people tied to it, unable to escape. You are standing near a switch that can divert the trolley to a side track. The side track also has one person tied to it. If you pull the lever, the trolley will kill the one person instead of the five, but if you do nothing, the five will die. Do you pull the lever?

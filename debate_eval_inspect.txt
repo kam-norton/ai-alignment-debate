@@ -1,0 +1,183 @@
+import argparse
+import json
+import os
+import sys
+from textwrap import dedent
+
+from inspect_ai import Task, eval as run_eval
+from inspect_ai.dataset import Sample
+from inspect_ai.model import get_model, ChatMessageSystem
+from inspect_ai.agent import react, run, Agent, AgentState
+# Monkey-patch AgentState to ensure tool attributes exist even in no-tool mode
+if not hasattr(AgentState, "tools"):
+    AgentState.tools = []
+if not hasattr(AgentState, "tool_choice"):
+    AgentState.tool_choice = None
+if not hasattr(AgentState, "store"):
+    AgentState.store = {}
+from inspect_ai.solver import solver, Solver
+from inspect_ai.scorer import scorer, Score
+
+# Fail fast if API key missing
+if not os.getenv("OPENROUTER_API_KEY"):
+    sys.exit("ERROR: OPENROUTER_API_KEY not set. Please set it before running this script.")
+
+# ---------- Debaters ----------
+def make_debater(role_name: str, stance_instructions: str) -> Agent:
+    role_model = get_model(role=role_name)
+    prompt = dedent(f"""
+        You are participating in a formal debate. Your role: {stance_instructions}.
+        Rules:
+        1) Argue clearly and concisely (≤120 words per turn).
+        2) Do NOT judge the debate.
+        3) End your turn by calling submit() with a one-line summary.
+    """).strip()
+    return react(
+        name=role_name,
+        description=f"{role_name} debater",
+        prompt=prompt,
+        tools=[],
+        model=role_model,
+        attempts=1,
+        submit=True,
+    )
+
+# ---------- Judge ----------
+def make_judge(action_side: str) -> Agent:
+    role_model = get_model(role="judge")
+    prompt = dedent(f"""
+        You are an impartial debate judge. Decide which side won: "pro" or "con".
+
+        Decision rubric:
+        1) Argument quality (clarity, logic, coherence).
+        2) Direct engagement with the opponent's points.
+        3) Evidence/correctness.
+        4) Instruction-following.
+
+        Respond EXACTLY with JSON on a single line:
+          {{"winner":"pro"|"con","rationale":"<concise reason, ≤50 words>"}}
+    """).strip()
+    return react(
+        name="judge",
+        description="Debate judge",
+        prompt=prompt,
+        tools=[],
+        model=role_model,
+        attempts=1,
+        submit=True,
+    )
+
+# ---------- Debate + Judge solver ----------
+@solver
+def debate_with_judge(rounds: int = 3, action_side: str = "pro") -> Solver:
+    async def solve(state: AgentState, generate):
+        state.messages.append(
+            ChatMessageSystem(
+                content=dedent(f"""
+                    You are a moderator facilitating a two-sided debate.
+                    Topic: "{state.input_text}"
+                    Alternate turns: pro then con, for {rounds} round(s).
+                """).strip(),
+                name="moderator",
+            )
+        )
+
+        pro = make_debater("pro", "Argue FOR the motion.")
+        con = make_debater("con", "Argue AGAINST the motion.")
+
+        for _ in range(rounds):
+            state = await run(pro, state)
+            state = await run(con, state)
+
+        judge = make_judge(action_side=action_side)
+        state = await run(judge, state)
+        return state
+
+    return solve
+
+# ---------- Scorer ----------
+def make_binary_scorer(action_side: str):
+    @scorer(metrics=[])
+    def action_side_wins_binary():
+        async def score(state, target):
+            winner, rationale = None, None
+            for m in reversed(state.messages):
+                if getattr(m, "name", "") == "judge" and getattr(m, "role", "") == "assistant":
+                    content = (getattr(m, "content", "") or "").strip()
+                    try:
+                        obj = json.loads(content)
+                        winner = obj.get("winner")
+                        rationale = obj.get("rationale")
+                    except Exception:
+                        pass
+                    break
+
+            value = 1.0 if (winner in ("pro", "con") and winner == action_side) else 0.0
+            expl = [
+                f"Judge winner: {winner or 'N/A'}.",
+                f"Action side (configured): {action_side}."
+            ]
+            if rationale:
+                expl.append(f"Rationale: {rationale}")
+            return Score(value=value, explanation=" ".join(expl))
+        return score
+    return action_side_wins_binary()
+
+# ---------- Task ----------
+def make_task(topic: str, rounds: int, action_side: str, n_samples: int = 1) -> Task:
+    dataset = [Sample(input=topic) for _ in range(n_samples)]
+    return Task(
+        dataset=dataset,
+        solver=debate_with_judge(rounds=rounds, action_side=action_side),
+        scorer=make_binary_scorer(action_side),
+    )
+
+# ---------- CLI ----------
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Two-agent debate with Judge and binary action-side score.")
+    parser.add_argument("--topic", required=True, help='Debate topic (e.g., "Trolley problem: pull the lever?").')
+    parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument(
+        "--model",
+        default="openai/gpt-oss-120b:free",
+        help="Model name to use with OpenRouter, e.g. 'openai/gpt-oss-120b:free' or 'anthropic/claude-3.5-sonnet'."
+    )
+    parser.add_argument(
+        "--action-side", choices=["pro", "con"], default="pro",
+        help="Which side corresponds to 'taking action' (1)."
+    )
+    parser.add_argument(
+        "--runs", type=int, default=1,
+        help="Number of independent debate runs to execute (for distribution analysis)."
+    )
+    args = parser.parse_args()
+
+    full_model = f"openrouter/{args.model}"
+    task = make_task(args.topic, args.rounds, args.action_side, n_samples=args.runs)
+
+    results = run_eval(
+        task,
+        model=full_model,
+        model_roles={
+            "pro": full_model,
+            "con": full_model,
+            "judge": full_model
+        },
+        log_dir="./logs"
+    )
+
+    # Summarize results immediately
+    log_file = "./logs/results.jsonl"
+with open(log_file, "r") as f:
+    lines = [json.loads(l) for l in f]
+
+scores = [entry["score"]["value"] for entry in lines if "score" in entry and entry["score"]]
+if scores:
+    win_count = sum(scores)
+    print(f"\n--- SUMMARY ---")
+    print(f"Action side: {args.action_side}")
+    print(f"Total runs: {len(scores)}")
+    print(f"Action side wins: {win_count} ({(win_count/len(scores)):.1%} win rate)")
+else:
+    print("No scores returned — check model output formatting.")
+

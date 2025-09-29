@@ -1,0 +1,6 @@
+conda activate alignment
+cd C:\Users\kamry\Documents\AI_project
+pip install hf_xet
+hf auth login
+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
+python debate_eval.py --topic "Trolley problem: pull the lever?" --rounds 3 --action-side pro --model hf/meta-llama/Meta-Llama-3.1-8B
