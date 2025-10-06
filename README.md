@@ -1,7 +1,7 @@
 # AI Project: Debate & Evaluation Framework
 
-This repository provides a lightweight framework for running scripted evaluations of language models.  
-It supports batch execution of experiments (e.g., debates, evaluations without judges, single responses) using OpenRouter-hosted models.
+This repository provides a lightweight framework for running scripted evaluations of language models. The evaluation is meant to provide logging and analysis of data from debating LLMs, to produce a pseudo-benchmark of how aligned a LLM is in an ethical framework on a scale of 0-1 (deontological-utilitarian).
+It supports batch execution of experiments (e.g., debates, evaluations without judges, single responses) using OpenRouter-hosted models, for anyone to adapt and use!
 
 ---
 
