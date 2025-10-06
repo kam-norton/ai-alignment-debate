@@ -14,7 +14,7 @@ It supports batch execution of experiments (e.g., debates, evaluations without j
 
 ## Setup
 
-1. Import and activate the conda environment:
+1. Import and activate the conda environment, provided above (yml):
 
    ```bash
    conda activate alignment
@@ -23,7 +23,7 @@ It supports batch execution of experiments (e.g., debates, evaluations without j
 2. Move into the project directory:
 
    ```bash
-   cd .../AI_project
+   cd .../ai-alignment-debate
    ```
 
 3. Set your OpenRouter API key as an environment variable:
@@ -46,6 +46,7 @@ It supports batch execution of experiments (e.g., debates, evaluations without j
 - Entry point to run a batch of experiments defined in the script.  
 - It iterates through the `SCRIPTS` list and runs each with specified topics, models, and parameters.  
 - Useful for structured, repeatable experiments.
+- Can be adjusted and adapted by users.
 
 ### 2. `debate_nojudge.py`
 - Runs a debate simulation **without** an evaluator/judge.  
@@ -66,7 +67,7 @@ python run_matrix.py
 
 ### Run a debate without a judge (with dummy variables)
 ```bash
-python debate_nojudge.py --topic "Is AI alignment possible?" --models "openai/gpt-5-nano" "openai/gpt-4.1"
+python debate_nojudge.py --topic "Is AI alignment possible?" --model "openai/gpt-5-nano"
 ```
 
 ### Run a single response test
